@@ -54,7 +54,7 @@ module cipher(clk, resetn, data_in, decode, cipher_method, go, verify, data_out)
 	wire [3:0] decode_caesar_out; 
 	wire [3:0] encode_caesar_out; 
 	
-	// Sub-level module for CAESAR CIPHER (for decoding).
+	// Sub-level module for CAESAR CIPHER (for decoding)
 	decode_caesar_ciper dcc (
 			.clk(clk),
 			.data_in(data_in),
