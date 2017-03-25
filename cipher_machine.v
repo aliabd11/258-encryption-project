@@ -130,7 +130,7 @@ module encode_caesar_cipher(clk, data_in, key, encode_out);
 
 	wire [4:0] offset;
 
-	output reg encode_out;
+	output reg [4:0] encode_out;
 
 	// To encode the data with the key, we add the key to the data in.
 	// Check if we need to loop around (that is, if the key will cause us to return to the start of the alphabet)
