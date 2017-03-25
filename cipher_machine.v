@@ -1,16 +1,25 @@
+/****************************************************************************
+ *			CIPHER MACHINE - A final project for CSC258	(Computer Org.)		*
+ *																			*
+ *				By Abdullah Ali and Mohamed Hammoud							*
+ *							Winter 2017										*
+ *																			*
+ ****************************************************************************/
+
 // Top level module for cipher machine.
 module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6);
 	/**
 	 * SW[9] -> Verify -> If on, verify. 
 	 * SW[8] -> Encode/Decode swich -> on for decode, off for encode. 
 	 * SW[7:6] -> cipher method: 00 (just display), 01 (caesar cipher), 10 (TBD), 11 
-	 * SW[3:0] -> data_in 
+	 * SW[4:0] -> data_in 
 	 *
-	 * KEY[3] -> 
-	 * KEY[2] ->
+	 * KEY[3] -> Load encryption key
+	 * KEY[2] -> Load char
 	 * KEY[1] -> Run Cipher (go)
 	 * KEY[0] -> Reset
 	**/
+
 	input [9:0] SW;
 	input [3:0] KEY;
 	input CLOCK_50;
@@ -24,46 +33,65 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	output [6:0] HEX5;
 	output [6:0] HEX6;
 	
-	wire [3:0] data_out; 
+	wire [4:0] data_out; 
+
+	/**
+	*		Characters start at 'a' (5'b0000) and end at 'z' (5'b11001)
+	**/
+	reg [4:0] char;
 	
     // Instantiate the cipher machine. 
 	cipher(
 		.clk(CLOCK_50),
-		.resetn(KEY[0])
-		.data_in(SW[3:0])
+		.resetn(KEY[0]),
+		.data_in(char),
+		.cipher_key(SW[4:0]),
 		.decode(SW[8]),
 		.cipher_method(SW[7:6]),
 		.go(KEY[1]),
 		.verify(KEY[2]),
 		.data_out(data_out));
 
+	// Load in character if key2 has been pressed. This is temporary, until we implement the keyboard.
+	always @(posedge clock)
+	begin
+		if (KEY[2] == 1'b0)
+		begin
+			char <= SW[4:0];
+		end
+	end
+
+
 
 endmodule
 
-module cipher(clk, resetn, data_in, decode, cipher_method, go, verify, data_out);
+module cipher(clk, resetn, data_in, cipher_key, decode, cipher_method, go, verify, data_out);
 
 	input clk;
-	input [3:0] data_in;
+	input [4:0] data_in;
+	input [4:0] cipher_key; 
 	input decode; // 0 for decode, 1 for encode. 
 	input [1:0] cipher_method;
 	input go;
 	input verify;  
 	
-	output reg [3:0] data_out; 
+	output reg [4:0] data_out; 
 	
-	wire [3:0] decode_caesar_out; 
-	wire [3:0] encode_caesar_out; 
+	wire [4:0] decode_caesar_out; 
+	wire [4:0] encode_caesar_out; 
 	
 	// Sub-level module for CAESAR CIPHER (for decoding)
 	decode_caesar_ciper dcc (
 			.clk(clk),
 			.data_in(data_in),
-			.decrypt_out(decode_caesar_out))
+			.key(cipher_key),
+			.decrypt_out(decode_caesar_out));
 	
 	// Sub-level module for CAESAR CIPHER (for encoding).
 	encode_caesar_cipher eco (
 			.clk(clk),
 			.data_in(data_in),
+			.key(cipher_key),
 			.encode_out(encode_caesar_out));
 			
 		
@@ -86,13 +114,47 @@ module cipher(clk, resetn, data_in, decode, cipher_method, go, verify, data_out)
 endmodule
 
 /** Given a 4-bit data input that has been encoded by a caesar cipher, this will decode the data, returning a decrypted letter. **/
-module decode_caesar_cipher(clk, data_in, decrypt_out);
+module decode_caesar_cipher(clk, data_in, key, decrypt_out);
+	
+	// todo
+
 
 endmodule
 
 /** Given a 4-bit data input, this will encode the data using caesar cipher algorithm. **/
-module encode_caesar_cipher(clk, data_in, encode_out);
+module encode_caesar_cipher(clk, data_in, key, encode_out);
 
+	input clk;
+	input [4:0] data_in;
+	input [4:0] key;
+
+	wire [4:0] offset;
+
+	output reg encode_out;
+
+	// To encode the data with the key, we add the key to the data in.
+	// Check if we need to loop around (that is, if the key will cause us to return to the start of the alphabet)
+	always @(posedge clk)
+	begin
+
+		// If we do not need to loop around, proceed as normal by adding the key to the data_in to get an encoded letter.
+		if ((data_in + key) <= 5'b11001)
+		begin
+			encode_out <= data_in + key;
+		end
+
+		// If we do need to loop around
+		if ((data_in + key) > 5'b11001)
+		begin
+			// Compute the offset by subtracting from the key how far we are away from the z character.
+			offset <= key - (5'b11001 - data_in);
+
+			// Our encrypted character will be the character at position corresponding to the char 'a' + offset.
+			encode_out <= 5'b00000 + offset; 
+
+		end
+	end
+	
 endmodule
 
 
