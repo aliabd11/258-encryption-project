@@ -9,12 +9,12 @@
 // Top level module for cipher machine.
 module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6);
 	/**
-	 * SW[9] -> Verify -> If on, verify. 
-	 * SW[8] -> Encode/Decode swich -> on for decode, off for encode. 
-	 * SW[7:6] -> cipher method: 00 (just display), 01 (caesar cipher), 10 (TBD), 11 
-	 * SW[4:0] -> data_in 
+	 * SW[9] -> Verify -> If on, verify.
+	 * SW[8] -> Encode/Decode swich -> on for decode, off for encode.
+	 * SW[7:6] -> cipher method: 00 (just display), 01 (caesar cipher), 10 (vigenère cipher), 11
+	 * SW[4:0] -> data_in
 	 *
-	 * KEY[3] 
+	 * KEY[3]
 	 * KEY[2] -> Load char
 	 * KEY[1] -> Run Cipher (go)
 	 * KEY[0] -> Reset
@@ -23,7 +23,7 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	input [9:0] SW;
 	input [3:0] KEY;
 	input CLOCK_50;
-	
+
 	output [9:0] LEDR;
 	output [6:0] HEX0;
 	output [6:0] HEX1;
@@ -32,15 +32,15 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	output [6:0] HEX4;
 	output [6:0] HEX5;
 	output [6:0] HEX6;
-	
-	wire [4:0] data_out; 
+
+	wire [4:0] data_out;
 
 	/**
-	*		Characters start at 'a' (5'b0000) and end at 'z' (5'b11001)
+	*		Characters start at 'a' (0 dec, 5'b0000) and end at 'z'(26 dec, 5'b11001)
 	**/
 	reg [4:0] char;
-	
-    // Instantiate the cipher machine. 
+
+    // Instantiate the cipher machine.
 	cipher cm(
 		.clk(CLOCK_50),
 		.resetn(KEY[0]),
@@ -70,44 +70,44 @@ module cipher(clk, resetn, data_in, cipher_key, decode, cipher_method, go, verif
 	input clk;
 	input resetn;
 	input [4:0] data_in;
-	input [4:0] cipher_key; 
-	input decode; // 0 for decode, 1 for encode. 
+	input [4:0] cipher_key;
+	input decode; // 0 for decode, 1 for encode.
 	input [1:0] cipher_method;
 	input go;
-	input verify;  
-	
-	output reg [4:0] data_out; 
-	
-	wire [4:0] decode_caesar_out; 
-	wire [4:0] encode_caesar_out; 
-	
+	input verify;
+
+	output reg [4:0] data_out;
+
+	wire [4:0] decode_caesar_out;
+	wire [4:0] encode_caesar_out;
+
 	// Sub-level module for CAESAR CIPHER (for decoding)
 	decode_caesar_cipher dcc (
 			.clk(clk),
 			.data_in(data_in),
 			.key(cipher_key),
 			.decrypt_out(decode_caesar_out));
-	
+
 	// Sub-level module for CAESAR CIPHER (for encoding).
 	encode_caesar_cipher eco (
 			.clk(clk),
 			.data_in(data_in),
 			.key(cipher_key),
 			.encode_out(encode_caesar_out));
-			
-		
-	// Set output of cipher based on their decode and cipher method. 
+
+
+	// Set output of cipher based on their decode and cipher method.
     always @(*)
 	begin
-		// 3-bit number denoted as dcc - if d is 0, we decode, if d is 1, we encode. cc represents the cipher type. 
+		// 3-bit number denoted as dcc - if d is 0, we decode, if d is 1, we encode. cc represents the cipher type.
 		case ({decode, cipher_method})
-			3'b000: data_out = data_in; // Case: 000 - print directly to out. 
-			3'b001: data_out = decode_caesar_out; // Case: 001 - Caesar Cipher by method of decoding. 
-			3'b010: data_out = 4'b0010; // Case: 010 - TBD cipher b method of decoding. 
-			3'b011: data_out = 4'b011; // Case: 011 - Free Mux Slot. 
-			3'b100: data_out = data_in; // Case: 100 - print directly to out. 
-			3'b101: data_out = encode_caesar_out; // Case: 101 - Caesar cipher by method of encoding. 
-			3'b110: data_out = 4'b0110; // Case: 110 - TBD cipher by method of encoding. 
+			3'b000: data_out = data_in; // Case: 000 - print directly to out.
+			3'b001: data_out = decode_caesar_out; // Case: 001 - Caesar Cipher by method of decoding.
+			3'b010: data_out = 4'b0010; // Case: 010 - Vigenère Cipher method of decoding.
+			3'b011: data_out = 4'b011; // Case: 011 - Free Mux Slot.
+			3'b100: data_out = data_in; // Case: 100 - print directly to out.
+			3'b101: data_out = encode_caesar_out; // Case: 101 - Caesar cipher by method of encoding.
+			3'b110: data_out = 4'b0110; // Case: 110 - Vigenère Cipher by method of encoding.
 			default: data_out = 4'b1111; // If this happens, something went wrong. Display F.
 		endcase
 	end
@@ -120,11 +120,31 @@ module decode_caesar_cipher(clk, data_in, key, decrypt_out);
 	input clk;
 	input [4:0] data_in;
 	input [4:0] key;
-	
-	output reg [4:0] decrypt_out;
-	
-	// todo
 
+	output reg [4:0] decrypt_out;
+
+	reg [4:0] offset;
+
+
+	// To decode the data with the key, we subtract the key from the data in.
+	// Check if we need to loop around (that is, if the key will cause us to return to the start of the alphabet)
+	always @(posedge clk)
+	begin
+		if ((data_in - key) > 5'b11001)
+		begin
+			encode_out <= data_in - key;
+		end
+
+		// If we do need to loop around
+		if ((data_in - key) <= 5'b11001)
+		begin
+			// Compute the offset by subtracting from the key how far we are away from the z character.
+			offset <= key - (5'b11001 - data_in);
+
+			// Our encrypted character will be the character at position corresponding to the char 'a' - offset.
+			encode_out <= 5'b00000 - offset;
+		end
+	end
 
 endmodule
 
@@ -157,18 +177,18 @@ module encode_caesar_cipher(clk, data_in, key, encode_out);
 			offset <= key - (5'b11001 - data_in);
 
 			// Our encrypted character will be the character at position corresponding to the char 'a' + offset.
-			encode_out <= 5'b00000 + offset; 
+			encode_out <= 5'b00000 + offset;
 
 		end
 	end
-	
+
 endmodule
 
 
 module hex_decoder(hex_digit, segments);
     input [3:0] hex_digit;
     output reg [6:0] segments;
-   
+
     always @(*)
         case (hex_digit)
             4'h0: segments = 7'b100_0000;
@@ -186,7 +206,7 @@ module hex_decoder(hex_digit, segments);
             4'hC: segments = 7'b100_0110;
             4'hD: segments = 7'b010_0001;
             4'hE: segments = 7'b000_0110;
-            4'hF: segments = 7'b000_1110;   
+            4'hF: segments = 7'b000_1110;
             default: segments = 7'h7f;
         endcase
 endmodule
