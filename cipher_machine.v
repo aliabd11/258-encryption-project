@@ -14,7 +14,7 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	 * SW[7:6] -> cipher method: 00 (just display), 01 (caesar cipher), 10 (TBD), 11 
 	 * SW[4:0] -> data_in 
 	 *
-	 * KEY[3] -> Load encryption key
+	 * KEY[3] 
 	 * KEY[2] -> Load char
 	 * KEY[1] -> Run Cipher (go)
 	 * KEY[0] -> Reset
@@ -41,7 +41,7 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	reg [4:0] char;
 	
     // Instantiate the cipher machine. 
-	cipher(
+	cipher cm(
 		.clk(CLOCK_50),
 		.resetn(KEY[0]),
 		.data_in(char),
@@ -53,7 +53,7 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 		.data_out(data_out));
 
 	// Load in character if key2 has been pressed. This is temporary, until we implement the keyboard.
-	always @(posedge clock)
+	always @(posedge CLOCK_50)
 	begin
 		if (KEY[2] == 1'b0)
 		begin
@@ -68,6 +68,7 @@ endmodule
 module cipher(clk, resetn, data_in, cipher_key, decode, cipher_method, go, verify, data_out);
 
 	input clk;
+	input resetn;
 	input [4:0] data_in;
 	input [4:0] cipher_key; 
 	input decode; // 0 for decode, 1 for encode. 
@@ -81,7 +82,7 @@ module cipher(clk, resetn, data_in, cipher_key, decode, cipher_method, go, verif
 	wire [4:0] encode_caesar_out; 
 	
 	// Sub-level module for CAESAR CIPHER (for decoding)
-	decode_caesar_ciper dcc (
+	decode_caesar_cipher dcc (
 			.clk(clk),
 			.data_in(data_in),
 			.key(cipher_key),
@@ -115,6 +116,12 @@ endmodule
 
 /** Given a 4-bit data input that has been encoded by a caesar cipher, this will decode the data, returning a decrypted letter. **/
 module decode_caesar_cipher(clk, data_in, key, decrypt_out);
+
+	input clk;
+	input [4:0] data_in;
+	input [4:0] key;
+	
+	output reg [4:0] decrypt_out;
 	
 	// todo
 
@@ -128,7 +135,7 @@ module encode_caesar_cipher(clk, data_in, key, encode_out);
 	input [4:0] data_in;
 	input [4:0] key;
 
-	wire [4:0] offset;
+	reg [4:0] offset;
 
 	output reg [4:0] encode_out;
 
