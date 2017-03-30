@@ -32,13 +32,29 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	output [6:0] HEX4;
 	output [6:0] HEX5;
 	output [6:0] HEX6;
-
+	
+	// Output wire.
 	wire [24:0] data_out;
-
-	/**
-	*		Characters start at 'a' (0 dec, 5'b0001) and end at 'z'(26 dec, 5'b11010)
-	**/
-	reg [24:0] char_array;
+	
+	// Array for each character (each character is 5 bits). A character starts at 'a', (5'b00001) and ends at 'z' (5'b11010). 
+	reg [4:0] char1;
+	reg [4:0] char2;
+	reg [4:0] char3;
+	reg [4:0] char4;
+	reg [4:0] char5;
+	
+	// A completed string array, with each character taking up 5 bits.
+	wire [24:0] char_array;
+	
+	// The k'th position of the character we are waiting for input on.
+	reg [2:0] current_char_index; 
+	
+	// Set the string array to each character provided in the input.
+	assign char_array[24:20] = char1;
+	assign char_array[19:15] = char2;
+	assign char_array[14:10] = char3;
+	assign char_array[9:5] = char4;
+	assign char_array[4:0] = char5;
 
     // Instantiate the cipher machine.
 	cipher cm(
@@ -58,117 +74,182 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 		// Reset signal. Clear string registry.
 		if (KEY[0] == 1'b0)
 		begin
-			char_array <= 25'b0000000000000000000000000; 
+			char1 <= 5'b00000;
+			char2 <= 5'b00000;
+			char3 <= 5'b00000;
+			char4 <= 5'b00000;
+			char5 <= 5'b00000;
+			current_char_index <= 2'b00;
 		end
 
 		// Load character into string.
 		if (KEY[2] == 1'b0)
 		begin
-			char_array[24:0] <= {char_array, SW[4:0]}; // Concatenate the new character to the START of the char array. 
+			case(current_char_index)
+				3'b000: char1 <= SW[4:0];
+				3'b001: char2 <= SW[4:0];
+				3'b010: char3 <= SW[4:0];
+				3'b011: char4 <= SW[4:0]; 
+				3'b100: char5 <= SW[4:0];
+			endcase
+			
+			// Increment to the next index for the character's input we are waiting for. 
+			current_char_index <= current_char_index + 1'b1;
 		end
+		
+		
 	end
 
 
 
 endmodule
 
-module control_caesar(clock, resetn, go, sig_done, sig_load_char, sig_concat_str, sig_load_str);
+module control_caesar(clock, resetn, go, sig_load_str, sig_do_char1, sig_do_char2, sig_do_char3, sig_do_char4, sig_do_char5);
+		
 		input clock;
 		input resetn;
 		input go;
-		input sig_done;
+		
+		
+		// Outputs to the datapath.
+		output reg sig_load_str; // If high, load string into character registers.
+		output reg sig_do_char1; // If high, cipher this character.
+		output reg sig_do_char2; // If high, cipher this character. 
+		output reg sig_do_char3; // If high, cipher this character.
+		output reg sig_do_char4; // If high, cipher this character.
+		output reg sig_do_char5; // If high, cipher this character. 
 
 		reg [5:0] current_state, next_state;
 
-		reg first_iteration; 
-		
-		output reg sig_load_char; 
-		output reg sig_concat_str; 
-		output reg sig_load_str; 
 
 		localparam  WAIT_INPUT	= 5'd0,
 					LOAD_STR	= 5'd1,
-					LOAD_CHAR	= 5'd2,
-					CONCAT_STR 	= 5'd3;
-
+					LOAD_STR2	= 5'd2,
+					LOAD_CHAR1	= 5'd3,
+					DO_CHAR1	= 5'd4,
+					LOAD_CHAR2	= 5'd5,
+					DO_CHAR2	= 5'd6,
+					LOAD_CHAR3	= 5'd7,
+					DO_CHAR3	= 5'd8,
+					LOAD_CHAR4	= 5'd9,
+					DO_CHAR4	= 5'd10,
+					LOAD_CHAR5	= 5'd11,
+					DO_CHAR5	= 5'd12,
+					DONE		= 5'd13;
+					
+		
+		// STATE MACHINE
 		always @(posedge clock)
 		begin: state_table 
 			case(current_state)
 
-				// Wait until a go signal.
+				// WAIT for Input from User. 
 				WAIT_INPUT: begin
+					// Need to turn off enable for the 5th character if we've looped back here from the end.
+					sig_do_char5 <= 1'b0;
+					
+					// Wait for the GO signal. 
 					next_state <= (~go) ? LOAD_STR : WAIT_INPUT;
-					first_iteration <= 1'b0; 
-					sig_concat_str <= 1'b0; 
-				end 
-
-				// Once the input has been determined, load the string into the register of the datapath.
+				end
+				
+				// LOAD_STR: Load in string to the register. 
 				LOAD_STR: begin 
 					sig_load_str <= 1'b1; 
-					next_state <= LOAD_CHAR;
+					next_state <= LOAD_CHAR1; 
 				end 
-
-				// Load a single character from the string into the cipher machine.
-				LOAD_CHAR: begin 
-					sig_load_str <= 1'b0; 
-					sig_concat_str <= 1'b0;
-
-					// We don't need to shift anything if this is the first iteration. (First character is located
-					// at [4:0]).
-					if (first_iteration == 1'b1)
-					begin
-						sig_load_char <= 1'b1; 
-					end 
-					
-					first_iteration <= 1'b1; 
-					next_state <= CONCAT_STR;
+				
+				// Take the first character from the string and put it in its own character register. 
+				LOAD_CHAR1: begin 
+					sig_load_str <= 1'b0;
+					sig_do_char1 <= 1'b1; 
+					next_state <= DO_CHAR1; 
+				end 
+				
+				// Cipher the first character.
+				DO_CHAR1: begin				
+					next_state <= LOAD_CHAR2;
 				end
-
-				// Concatenate the output of the encode/decoded character to the overall output of the cipher.
-				CONCAT_STR: begin 
-					
-					// Turn off signals.
-					sig_load_char <= 1'b0;
-
-					// Turn on concat str signal. 
-					sig_concat_str <= 1'b1;
-					
-					// Check if we've received a signal from the datapath telling us that there are no more 
-					// characters.
-					if (sig_done == 1'b0)
-					begin 
-						next_state <= LOAD_CHAR; 
-					end 
-					
-					// If that is the case, then we re done.
-					if (sig_done == 1'b1)
-					begin
-						next_state <= WAIT_INPUT;
-					end 		
+				
+				// Take the second character from the string and put it in its own character register. 
+				LOAD_CHAR2: begin  
+					sig_do_char1 <= 1'b0; 
+					sig_do_char2 <= 1'b1; 
+					next_state <= DO_CHAR2; 
 				end 
-			endcase
-		end
+				
+				// Cipher the second character. 
+				DO_CHAR2: begin
+					next_state <= LOAD_CHAR3;
+				end
+				// See logic above... as it is the same.
+				LOAD_CHAR3: begin  
+					sig_do_char2 <= 1'b0; 
+					sig_do_char3 <= 1'b1; 
+					next_state <= DO_CHAR3; 
+				end 
+				
+				DO_CHAR3: begin			
+					next_state <= LOAD_CHAR4;
+				end
+				
+				LOAD_CHAR4: begin  
+					sig_do_char3 <= 1'b0; 
+					sig_do_char4 <= 1'b1; 
+					next_state <= DO_CHAR4; 
+				end 
+				
+				DO_CHAR4: begin			
+					next_state <= LOAD_CHAR5;
+				end
+				
+				LOAD_CHAR5: begin  
+					sig_do_char4 <= 1'b0; 
+					sig_do_char5 <= 1'b1; 
+					next_state <= DO_CHAR5; 
+				end 
+				
+				// After ciphering the last character, return to waiting for input. 
+				DO_CHAR5: begin			
+					next_state <= DONE;
+				end
+				
+				DONE: begin
+					sig_do_char5 = 1'b0; 
+					next_state <= DONE;
+				end 
+				
+					
+			endcase 
+		end 
+
 
 	// current_state registers
     always@(posedge clock)
     begin: state_FFs
         if(!resetn)
+		begin
             current_state <= WAIT_INPUT;
+		end 
         else
             current_state <= next_state;
     end // state_FFS
 
 endmodule
 
-module datapath_caesar(clock, resetn, char_array, cipher_shift, decode, sig_load_char, sig_load_str, sig_concat_str, char_array_out, sig_done);
+module datapath_caesar(clock, resetn, char_array, cipher_shift, decode, sig_load_str, sig_do_char1, sig_do_char2, sig_do_char3, sig_do_char4, sig_do_char5, char_array_out);
 	input clock;
 	input resetn;
 	input [24:0] char_array; 
-	input [4:0] cipher_shift; 
+	input [4:0] cipher_shift;
 	input decode;
-	input sig_concat_str; // Signal from Control.
-	input sig_load_char; // Signal from Control.
-	input sig_load_str; // Signal from control.
+
+	// Signals from control. When high, we are working on this character. 
+	input sig_do_char1;
+	input sig_do_char2; 
+	input sig_do_char3; 
+	input sig_do_char4; 
+	input sig_do_char5; 
+	input sig_load_str; 
 
 	// Output from caesar cipher.
 	wire [4:0] encode_out;
@@ -180,25 +261,43 @@ module datapath_caesar(clock, resetn, char_array, cipher_shift, decode, sig_load
 	reg [4:0] char3;
 	reg [4:0] char4;
 	reg [4:0] char5;
-
-	reg [1:0] current_char_index; // which character we are currently working on.
+	
+	// The current character we are ciphering.
+	reg [4:0] curr_char;
+	reg [1:0] current_char_index; 
  	
  	// An array of characters, the string, is what will be outputed upon completion of the cipher machine.
-	output reg [24:0] char_array_out;
+	output [24:0] char_array_out;
+
+
+	// Outputs from the cipher machines.
+	reg [4:0] char1_out;
+	reg [4:0] char2_out;
+	reg [4:0] char3_out;
+	reg [4:0] char4_out;
+	reg [4:0] char5_out;
 	
-	// Goes high if the cipher mine is done (no more characters left to work on)
-	output reg sig_done; 
+	// Build the output string. 
+	assign char_array_out[24:20] = char1_out; 
+	assign char_array_out[19:15] = char2_out; 
+	assign char_array_out[14:10] = char3_out; 
+	assign char_array_out[9:5] = char4_out; 
+	assign char_array_out[4:0] = char5_out; 
 	
-	// Register storing the string from data_in.
-	reg [24:0] reg_char; 
 	
 	// Instantiate a caesar cipher for encoding.
 	encode_caesar_cipher ecc (
 			.clk(clock), 
-			.enable(1'b1), 
-			.data_in(char_array), 
+			.data_in(curr_char), 
 			.cipher_shift(cipher_shift), 
 			.encode_out(encode_out));
+			
+	// Instantiate a caesar cipher for encoding.
+	decode_caesar_cipher dcc (
+			.clk(clock), 
+			.data_in(curr_char), 
+			.cipher_shift(cipher_shift), 
+			.decode_out(decode_out));
 	
 	// Begin datapath cases.
 	always @(posedge clock)
@@ -207,65 +306,134 @@ module datapath_caesar(clock, resetn, char_array, cipher_shift, decode, sig_load
 	// CASE 1: RESET.
 	if (resetn == 1'b0)
 		begin
-			char_array_out <= 25'b0000000000000000000000000;
-			sig_done <= 1'b0;
 			current_char_index <= 2'b00;
+			curr_char <= 5'b00000; 
 			char1 <= 5'b00000;
 			char2 <= 5'b00000;
 			char3 <= 5'b00000;
 			char4 <= 5'b00000;
 			char5 <= 5'b00000;
-			char_array_out <= {char1, char2, char3, char5, char5}; 
+			char1_out <= 5'b00000;
+			char2_out <= 5'b00000;
+			char3_out <= 5'b00000;
+			char4_out <= 5'b00000;
+			char5_out <= 5'b00000; 
 		end
 	
-	// CASE 2: LOAD STRING. In this step, the string from data_in is loaded into the registers.	
+	// CASE 2: LOAD STRING. In this step, the string from data_in is loaded into the register for EACH character.	
 	if (sig_load_str == 1'b1)
-	begin
-		reg_char <= char_array;
-	end 
+		begin
+			char1 <= char_array[24:20];
+			char2 <= char_array[19:15];
+			char3 <= char_array[14:10];
+			char4 <= char_array[9:5];
+			char5 <= char_array[4:0];
+		end 
 	
-	// CASE 3: LOAD_STR. This will pop a character off of the string and send it to the cipher.
-	if (sig_load_char == 1'b1)
+	// CASE 3 (char 1): Load and process the first character. 
+	if (sig_do_char1 == 1'b1)
 		begin
-			reg_char <= reg_char >> 5; 
-			// If what we popped is the 0 bits, then we are done.
-			if (reg_char[4:0] == 5'b00000)
-			begin
-				sig_done <= 1'b1; 
-			end 
-		end 
-
-	// CASE 4 CONCAT_STR. This will set the output from the cipher for each character in the
-	// appropriate position in the final character array.	
-	if (sig_concat_str == 1'b1)
-	begin
-		// If we are decoding.
-		if (decode == 1'b0)
+			// Load character
+			curr_char <= char1; 
+			
+			// Only process if this character is between [a-z],
+			if (curr_char > 5'b00000)
+				begin 
+					if (decode == 1'b0)
+						begin 
+							char1_out <= decode_out; 
+						end
+						
+					if (decode == 1'b1)
+						begin 
+							char1_out <= encode_out; 
+						end
+				end 	
+		end //end case char1.
+	
+	// CASE 3 (char 2): Load and process the second character.
+	if (sig_do_char2 == 1'b1)
 		begin
-			// Set the current character's register to the output of decode.
-			case (current_char_index)
-				2'b00: char1 <= decode_out;
-				2'b01: char2 <= decode_out;
-				2'b10: char3 <= decode_out;
-				2'b11: char4 <= decode_out; 
-			endcase
-		end 
+			// Load character.
+			curr_char <= char2; 
+			
+			// Only process if this character is between [a-z],
+			if (curr_char > 5'b00000)
+				begin 
+					if (decode == 1'b0)
+						begin 
+							char2_out <= decode_out; 
+						end
+						
+					if (decode == 1'b1)
+						begin 
+							char2_out <= encode_out; 
+						end
+				end 	
+		end //end case char2.
 		
-		// Otherwise, encoding.
-		if (decode == 1'b1)
+	// CASE 3 (char 3): Load and process the third character. 
+	if (sig_do_char3 == 1'b1)
 		begin
-			// Set the current character's register to the input of the encode.
-			case (current_char_index)
-				2'b00: char1 = encode_out;
-				2'b01: char2 = encode_out;
-				2'b10: char3 = encode_out;
-				2'b11: char4 = encode_out; 
-			endcase 
-		end 
-		// Increment the current character counter.
-		current_char_index <= current_char_index + 1'b1;
-	end 
-	
+			// Load character
+			curr_char <= char3; 
+			
+			// Only process if this character is between [a-z],
+			if (curr_char > 5'b00000)
+				begin 
+					if (decode == 1'b0)
+						begin 
+							char3_out <= decode_out; 
+						end
+						
+					if (decode == 1'b1)
+						begin 
+							char3_out <= encode_out; 
+						end
+				end 	
+		end //end case char3.
+		
+	// CASE 3 (char 4): Load and process the fourth character. 
+	if (sig_do_char4 == 1'b1)
+		begin
+			// Load character.
+			curr_char <= char4; 
+			
+			// Only process if this character is between [a-z],
+			if (curr_char > 5'b00000)
+				begin 
+					if (decode == 1'b0)
+						begin 
+							char4_out <= decode_out; 
+						end
+						
+					if (decode == 1'b1)
+						begin 
+							char4_out <= encode_out; 
+						end
+				end 	
+		end //end case char4.
+			
+	// CASE 3 (char 5): Load and process the fifth character.   
+	if (sig_do_char5 == 1'b1)
+		begin
+			// Load character. 
+			curr_char <= char5; 
+			
+			// Only process if this character is between [a-z],
+			if (curr_char > 5'b00000)
+				begin 
+					if (decode == 1'b0)
+						begin 
+							char5_out <= decode_out; 
+						end
+						
+					if (decode == 1'b1)
+						begin 
+							char5_out <= encode_out; 
+						end
+				end 	
+		end //end case char5.
 	end 
 	
 
@@ -276,72 +444,88 @@ module cipher(clk, resetn, data_in, cipher_shift, decode, cipher_method, go, ver
 	input clk;
 	input resetn;
 	input [24:0] data_in;
-	input [4:0] cipher_shift;
+	input [4:0] cipher_shift; 
 	input decode; // 0 for decode, 1 for encode.
 	input [1:0] cipher_method;
 	input go;
 	input verify;
+	
+	output reg [24:0] data_out; 
+	
+	wire [24:0] cipher_shift_vg; 
+	
+	// Creates a vigenere key by repeating the caesar cipher key 5 times. 
+	
+	assign cipher_shift_vg = {5{cipher_shift}};
 
-	wire sig_done;
-	wire sig_load_char;
-	wire sig_concat_str;
-	wire sig_load_str;
+	// Wires from the caesar control to caesar datapath. 
+	wire sig_load_str_cr;
+	wire sig_do_char1_cr;
+	wire sig_do_char2_cr;
+	wire sig_do_char3_cr;
+	wire sig_do_char4_cr;
+	wire sig_do_char5_cr;
 
-	output [24:0] data_out;  
+	wire [24:0] data_caesar;
 	
-	wire [24:0] data_o;
-	
-	assign data_out = data_o;
+	wire [24:0] data_vigenere; 
 	
 	
+	// INSTANTIATE CONTROL PATH for CAESAR CIPHER.
 	control_caesar cc(
 		.clock(clk), 
 		.resetn(resetn), 
 		.go(go), 
-		.sig_done(sig_done), 
-		.sig_load_char(sig_load_char), 
-		.sig_concat_str(sig_concat_str),
-		.sig_load_str(sig_load_str));
-
-
-	datapath_caesar dc(
+		.sig_load_str(sig_load_str_cr), 
+		.sig_do_char1(sig_do_char1_cr), 
+		.sig_do_char2(sig_do_char2_cr), 
+		.sig_do_char3(sig_do_char3_cr), 
+		.sig_do_char4(sig_do_char4_cr), 
+		.sig_do_char5(sig_do_char5_cr));
+	
+	// INSTANTIATE DATA PATH for CAESAR CIPHER.
+	datapath_caesar dpcc(
 		.clock(clk), 
 		.resetn(resetn), 
 		.char_array(data_in), 
 		.cipher_shift(cipher_shift), 
-		.decode(decode),
-		.sig_load_char(sig_load_char),
-		.sig_concat_str(sig_concat_str),
-		.sig_load_str(sig_load_str),
-		.char_array_out(data_o), 
-		.sig_done(sig_done));
+		.decode(decode), 
+		.sig_load_str(sig_load_str_cr), 
+		.sig_do_char1(sig_do_char1_cr), 
+		.sig_do_char2(sig_do_char2_cr), 
+		.sig_do_char3(sig_do_char3_cr), 
+		.sig_do_char4(sig_do_char4_cr), 
+		.sig_do_char5(sig_do_char5_cr), 
+		.char_array_out(data_caesar));
+		
+	// INSTANTIATE CONTROL PATH for VIGENERE CIPHER.
+		// todo
+	
+	// INSTANTIATE DATA PATH for VIGENERE CIPHER.
+		// todo 
 
-	// Set output of cipher based on their decode and cipher method.
-   /** always @(*)
+	// Set output. 
+    always @(*)
 	begin
-		// 3-bit number denoted as dcc - if d is 0, we decode, if d is 1, we encode. cc represents the cipher type.
-		case ({decode, cipher_method})
-			3'b000: data_out = data_in; // Case: 000 - print directly to out.
-			3'b001: data_out = data_out; // Case: 001 - Caesar Cipher by method of decoding.
-			3'b010: data_out = 4'b0010; // Case: 010 - Vigenère Cipher method of decoding.
-			3'b011: data_out = 4'b011; // Case: 011 - Free Mux Slot.
-			3'b100: data_out = data_in; // Case: 100 - print directly to out.
-			3'b101: data_out = encode_caesar_out; // Case: 101 - Caesar cipher by method of encoding.
-			3'b110: data_out = 4'b0110; // Case: 110 - Vigenère Cipher by method of encoding.
-			default: data_out = 4'b1111; // If this happens, something went wrong. Display F.
+		// Output machine based on if they are doing a caesar cipher or vigenere cipher, or simply printing. 
+		case (cipher_method)
+			2'b00: data_out <= data_in; 
+			2'b01: data_out <= data_caesar; 
+			2'b10: data_out <= data_vigenere; 
+			2'b11: data_out <= data_in; 
 		endcase
-	end**/
+	end
 
 endmodule
 
 /** Given a 4-bit data input that has been encoded by a caesar cipher, this will decode the data, returning a decrypted letter. **/
-module decode_caesar_cipher(clk, data_in, cipher_shift, decrypt_out);
+module decode_caesar_cipher(clk, data_in, cipher_shift, decode_out);
 
 	input clk;
 	input [4:0] data_in;
 	input [4:0] cipher_shift;
 
-	output reg [4:0] decrypt_out;
+	output reg [4:0] decode_out;
 
 	reg [4:0] offset;
 
@@ -352,7 +536,7 @@ module decode_caesar_cipher(clk, data_in, cipher_shift, decrypt_out);
 	begin
 		if ((data_in - cipher_shift) > 5'b11010)
 		begin
-			decrypt_out <= data_in - cipher_shift;
+			decode_out <= data_in - cipher_shift;
 		end
 
 		// If we do need to loop around
@@ -362,18 +546,17 @@ module decode_caesar_cipher(clk, data_in, cipher_shift, decrypt_out);
 			offset <= cipher_shift - (5'b11010 - data_in);
 
 			// Our encrypted character will be the character at position corresponding to the char 'a' - offset.
-			decrypt_out <= 5'b00001 - offset;
+			decode_out <= 5'b00000 - offset;
 		end
 	end
 
 endmodule
 
 /** Given a 4-bit data input, this will encode the data using caesar cipher algorithm. **/
-module encode_caesar_cipher(clk, enable, data_in, cipher_shift, encode_out);
+module encode_caesar_cipher(clk, data_in, cipher_shift, encode_out);
 
 	input clk;
-	input enable;
-	input [24:0] data_in;
+	input [4:0] data_in;
 	input [4:0] cipher_shift;
 
 	reg [4:0] offset;
@@ -386,19 +569,19 @@ module encode_caesar_cipher(clk, enable, data_in, cipher_shift, encode_out);
 	begin
 
 			// If we do not need to loop around, proceed as normal by adding the key to the data_in to get an encoded letter.
-			if ((data_in[4:0] + cipher_shift) <= 5'b11010)
+			if ((data_in + cipher_shift) <= 5'b11010)
 			begin
 				encode_out <= data_in + cipher_shift;
 			end
 
 			// If we do need to loop around
-			if ((data_in[4:0] + cipher_shift) > 5'b11010)
+			if ((data_in + cipher_shift) > 5'b11010)
 			begin
 				// Compute the offset by subtracting from the key how far we are away from the z character.
-				offset <= cipher_shift - (5'b11010 - data_in[4:0]);
+				offset <= cipher_shift - (5'b11010 - data_in);
 
 				// Our encrypted character will be the character at position corresponding to the char 'a' + offset.
-				encode_out <= 5'b00001 + offset;
+				encode_out <= 5'b00000 + offset;
 
 			end
 
