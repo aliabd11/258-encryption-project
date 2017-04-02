@@ -7,7 +7,15 @@
  ****************************************************************************/
 
 // Top level module for cipher machine.
-module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6);
+module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, HEX6, 
+		VGA_CLK,   						//	VGA Clock
+		VGA_HS,							//	VGA H_SYNC
+		VGA_VS,							//	VGA V_SYNC
+		VGA_BLANK_N,						//	VGA BLANK
+		VGA_SYNC_N,						//	VGA SYNC
+		VGA_R,   						//	VGA Red[9:0]
+		VGA_G,	 						//	VGA Green[9:0]
+		VGA_B );  						//	VGA Blue[9:0]);
 	/**
 	 * SW[9] -> Verify -> If on, verify.
 	 * SW[8] -> Encode/Decode swich -> on for decode, off for encode.
@@ -23,7 +31,9 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	input [9:0] SW;
 	input [3:0] KEY;
 	input CLOCK_50;
-
+	
+	// Outputs for HEX.
+	
 	output [9:0] LEDR;
 	output [6:0] HEX0;
 	output [6:0] HEX1;
@@ -32,9 +42,42 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	output [6:0] HEX4;
 	output [6:0] HEX5;
 	output [6:0] HEX6;
-
+	
+	// Declare your inputs and outputs here
+	// Do not change the following outputs
+	output			VGA_CLK;   				//	VGA Clock
+	output			VGA_HS;					//	VGA H_SYNC
+	output			VGA_VS;					//	VGA V_SYNC
+	output			VGA_BLANK_N;				//	VGA BLANK
+	output			VGA_SYNC_N;				//	VGA SYNC
+	output	[9:0]	VGA_R;   				//	VGA Red[9:0]
+	output	[9:0]	VGA_G;	 				//	VGA Green[9:0]
+	output	[9:0]	VGA_B;   				//	VGA Blue[9:0]
+	
+	reg background_image; 
+	
+	 VGA_verification_output vga
+	(
+		.CLOCK_50(CLOCK_50),						//	On Board 50 MHz
+		// Your inputs and outputs here
+        .KEY(KEY),
+        .SW(SW),
+        .background_image(background_image),
+		// The ports below are for the VGA output.  Do not change.
+		.VGA_CLK(VGA_CLK),   						//	VGA Clock
+		.VGA_HS(VGA_HS),							//	VGA H_SYNC
+		.VGA_VS(VGA_VS),							//	VGA V_SYNC
+		.VGA_BLANK_N(VGA_BLANK_N),						//	VGA BLANK
+		.VGA_SYNC_N(VGA_SYNC_N),						//	VGA SYNC
+		.VGA_R(VGA_R),   						//	VGA Red[9:0]
+		.VGA_G(VGA_G),	 						//	VGA Green[9:0]
+		.VGA_B(VGA_B)   						//	VGA Blue[9:0]
+	);
+		
 	// Output wire.
 	wire [24:0] data_out;
+	wire verify_out;
+	
 
 	// Array for each character (each character is 5 bits). A character starts at 'a', (5'b00001) and ends at 'z' (5'b11010).
 	reg [4:0] char1;
@@ -65,8 +108,9 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 		.decode(SW[8]),
 		.cipher_method(SW[7:6]),
 		.go(KEY[1]),
-		.verify(KEY[2]),
-		.data_out(data_out));
+		.verify_in(KEY[2]),
+		.data_out(data_out),
+		.verify_out(verify_out));
 
 	// Load in character if key2 has been pressed. This is temporary, until we implement the keyboard.
 	always @(posedge CLOCK_50)
@@ -96,11 +140,31 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 			// Increment to the next index for the character's input we are waiting for.
 			current_char_index <= current_char_index + 1'b1;
 		end
-
+		
+		// Load verify data in. Check against data_out. 
+			// todo 
 
 	end
-
-
+	
+	// If verify is high, display an image. 
+	always @(posedge clock)
+	begin 
+		if (verify == 1'b1)
+			begin 
+				// success
+				if (verify_out == 1'b0)
+					background_image <= "success.colour.mif";
+					// audio...
+				// failure. 
+				if (verify_out == 1'b1)
+					background_image <= "failure.colour.mif";
+					// audio...
+			end 
+		
+		// Blank screen if veirfy is off. 
+		if (verify == 1'b0)
+			background_image <= "black.mif";
+	end 
 
 endmodule
 
@@ -372,7 +436,7 @@ module datapath_caesar(clock, resetn, char_array, cipher_shift, decode, sig_load
 	
 endmodule
 
-module cipher(clk, resetn, data_in, cipher_shift, decode, cipher_method, go, verify, data_out);
+module cipher(clk, resetn, data_in, cipher_shift, decode, cipher_method, go, verify_in, data_out, verify_out);
 
 	input clk;
 	input resetn;
@@ -381,8 +445,11 @@ module cipher(clk, resetn, data_in, cipher_shift, decode, cipher_method, go, ver
 	input decode; // 0 for decode, 1 for encode.
 	input [1:0] cipher_method;
 	input go;
-	input verify;
-
+	input verify_in;
+	
+	// 0 if success, 1 if failure. verify_out is set from a verification circuit. 
+	output verify_out; 
+	
 	output reg [24:0] data_out;
 
 	wire [24:0] cipher_shift_vg;
@@ -390,7 +457,6 @@ module cipher(clk, resetn, data_in, cipher_shift, decode, cipher_method, go, ver
 	// Creates a vigenere key by repeating the caesar cipher key 5 times.
 
 	assign cipher_shift_vg = {5{cipher_shift}};
-
 	
 	wire sig_done; 
 	wire sig_load_chars;
