@@ -22,7 +22,7 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	 * SW[7:6] -> cipher method: 00 (just display), 01 (caesar cipher), 10 (vigenère cipher), 11
 	 * SW[4:0] -> data_in
 	 *
-	 * KEY[3]
+	 * KEY[3] -> Load Key 
 	 * KEY[2] -> Load char
 	 * KEY[1] -> Run Cipher (go)
 	 * KEY[0] -> Reset
@@ -85,12 +85,21 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	reg [4:0] char3;
 	reg [4:0] char4;
 	reg [4:0] char5;
+	
+	reg [4:0] cipher_shift_1;
+	reg [4:0] cipher_shift_2;
+	reg [4:0] cipher_shift_3;
+	reg [4:0] cipher_shift_4;
+	reg [4:0] cipher_shift_5;
+	
 
 	// A completed string array, with each character taking up 5 bits.
 	wire [24:0] char_array;
+	wire [24:0] cipher_shift; 
 
 	// The k'th position of the character we are waiting for input on.
 	reg [2:0] current_char_index;
+	reg [2:0] current_cipher_shift_index; 
 
 	// Set the string array to each character provided in the input.
 	assign char_array[24:20] = char1;
@@ -98,13 +107,19 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 	assign char_array[14:10] = char3;
 	assign char_array[9:5] = char4;
 	assign char_array[4:0] = char5;
+	
+	assign cipher_shift[24:20] = cipher_shift_1;
+	assign cipher_shift[19:15] = cipher_shift_2;
+	assign cipher_shift[14:10] = cipher_shift_3;
+	assign cipher_shift[9:5] = cipher_shift_4;
+	assign cipher_shift[4:0] = cipher_shift_5;
 
     // Instantiate the cipher machine.
 	cipher cm(
 		.clk(CLOCK_50),
 		.resetn(KEY[0]),
 		.data_in(char_array),
-		.cipher_shift(SW[4:0]),
+		.cipher_shift(cipher_shift),
 		.decode(SW[8]),
 		.cipher_method(SW[7:6]),
 		.go(KEY[1]),
@@ -136,9 +151,20 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR, HEX0, HEX1, HEX2, HEX3, HEX4, HEX5, H
 				3'b011: char4 <= SW[4:0];
 				3'b100: char5 <= SW[4:0];
 			endcase
+		
+		if (KEY[3] == 1'b0)
+		begin 
+			case (current_cipher_shift_index)
+				3'b000: cipher_shift_1 <= SW[4:0];
+				3'b001: cipher_shift_2 <= SW[4:0];
+				3'b010: cipher_shift_3 <= SW[4:0];
+				3'b011: cipher_shift_4 <= SW[4:0];
+				3'b100: cipher_shift_5 <= SW[4:0];
+			endcase
 
 			// Increment to the next index for the character's input we are waiting for.
 			current_char_index <= current_char_index + 1'b1;
+			current_cipher_shift_index <= current_cipher_shift_index + 1'b1; 
 		end
 		
 		// Load verify data in. Check against data_out. 
@@ -441,7 +467,7 @@ module cipher(clk, resetn, data_in, cipher_shift, decode, cipher_method, go, ver
 	input clk;
 	input resetn;
 	input [24:0] data_in;
-	input [4:0] cipher_shift;
+	input [24:0] cipher_shift;
 	input decode; // 0 for decode, 1 for encode.
 	input [1:0] cipher_method;
 	input go;
@@ -484,7 +510,7 @@ module cipher(clk, resetn, data_in, cipher_shift, decode, cipher_method, go, ver
 		.clock(clk), 
 		.resetn(resetn), 
 		.char_array(data_in), 
-		.cipher_shift(cipher_shift), 
+		.cipher_shift(cipher_shift[24:20]), 
 		.decode(decode),  
 		.sig_load_chars(sig_load_chars), 
 		.sig_cipher(sig_cipher), 
