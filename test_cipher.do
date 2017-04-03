@@ -19,18 +19,19 @@ add wave -r {/*}
 
 #  Load letter a.  
 force {CLOCK_50} 0 0 ns, 1 1 ns -r 2
-force {SW[9]} 0
+force {SW[9]} 1
 force {SW[8]} 1
-force {SW[7:6]} 01
+force {SW[7:6]} 10
+force {SW[5]} 0 
 force {SW[4:0]} 00001
 force {KEY[2]} 1
-force {KEY[0]} 0
 force {KEY[1]} 1
+force {KEY[3]} 1
 run 10ns
 
 # Turn off reset. 
-force {KEY[0]} 1 
-run 4ns 
+force {SW[5]} 1 
+run 4ns
 
 # Load char a 
 force {KEY[2]} 0
@@ -71,14 +72,56 @@ run 2ns
 force {KEY[2]} 1 
 run 2ns
 
-# Load key - shifting by 3 letters.
-force {SW[4:0]} 00001  
+# Load key - h
+force {SW[4:0]} 01000  
+run 4ns
+
+force {KEY[3]} 0 
+run 2ns
+
+force {KEY[3]} 1 
+run 4ns
+
+force {SW[4:0]} 00101
+run 4ns 
+
+force {KEY[3]} 0 
+run 2ns
+
+force {KEY[3]} 1 
+run 4ns
+
+force {SW[4:0]} 01100
+run 4ns 
+
+force {KEY[3]} 0 
+run 2ns
+
+force {KEY[3]} 1 
+run 4ns
+
+force {SW[4:0]} 01100
+run 4ns 
+
+force {KEY[3]} 0 
+run 2ns
+
+force {KEY[3]} 1 
+run 4ns
+
+force {SW[4:0]} 01111
+run 4ns 
+
+force {KEY[3]} 0 
+run 2ns
+
+force {KEY[3]} 1 
 run 4ns
 
 force {KEY[1]} 0 
 run 6ns
 
 force {KEY[1]} 1 
-run 100ns 
+run 300ns 
 
 
