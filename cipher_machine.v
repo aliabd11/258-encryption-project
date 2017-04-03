@@ -7,7 +7,7 @@
  ****************************************************************************/
 
 // Top level module for cipher machine.
-module cipher_top(SW, KEY, CLOCK_50, LEDR,  VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_N, VGA_SYNC_N, VGA_R, VGA_G,	VGA_B );  	
+module cipher_top(SW, KEY, CLOCK_50, LEDR);  	
 
 	// SW[9] Verify (0 -> Verify, 1 -> No verify), SW[8] -> Encode/Decode, SW[7:6] -> Cipher Method.
 	// SW[5] -> Reset, SW[4:0] -> data_in. 
@@ -18,6 +18,8 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR,  VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_N
 
 	// 50ms clock. 
 	input CLOCK_50;
+	
+	output [9:0] LEDR;
 
 	// Output wire.
 	wire [24:0] data_out;
@@ -104,7 +106,10 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR,  VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_N
 				3'b011: char4 <= SW[4:0];
 				3'b100: char5 <= SW[4:0];
 			endcase
+			
+			current_char_index <= current_char_index + 1'b1;
 
+		end 
 		// Load key. 
 		if (KEY[3] == 1'b0)
 		begin
@@ -117,7 +122,6 @@ module cipher_top(SW, KEY, CLOCK_50, LEDR,  VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_N
 			endcase
 
 			// Increment to the next index for the character's input we are waiting for.
-			current_char_index <= current_char_index + 1'b1;
 			current_cipher_shift_index <= current_cipher_shift_index + 1'b1;
 		end
 
@@ -743,6 +747,7 @@ module datapath_vigenere(clock, resetn, char_array, vigenere_shift, decode, sig_
       	3'b010: curr_cipher_shift <= vigenere_shift[14:10];
       	3'b011: curr_cipher_shift <= vigenere_shift[9:5];
       	3'b100: curr_cipher_shift <= vigenere_shift[4:0];
+		endcase
     end
 
   // CASE 4: Set the output from the cipher.
@@ -793,23 +798,7 @@ module encode_caesar_cipher(clk, data_in, cipher_shift, encode_out);
 	// Check if we need to loop around (that is, if the key will cause us to return to the start of the alphabet)
 	always @(posedge clk)
 	begin
-
-			// If we do not need to loop around, proceed as normal by adding the key to the data_in to get an encoded letter.
-			if ((data_in + cipher_shift) <= 5'b11010)
-			begin
-				encode_out <= data_in + cipher_shift;
-			end
-
-			// If we do need to loop around
-			if ((data_in + cipher_shift) > 5'b11010)
-			begin
-				// Compute the offset by subtracting from the key how far we are away from the z character.
-				offset <= cipher_shift - (5'b11010 - data_in);
-
-				// Our encrypted character will be the character at position corresponding to the char 'a' + offset.
-				encode_out <= 5'b00000 + offset;
-
-			end
+			encode_out <= (data_in + cipher_shift) % 26;
 	end
 
 endmodule
@@ -830,20 +819,7 @@ module decode_caesar_cipher(clk, data_in, cipher_shift, decode_out);
 	// Check if we need to loop around (that is, if the key will cause us to return to the start of the alphabet)
 	always @(posedge clk)
 	begin
-		if ((data_in - cipher_shift) > 5'b11010)
-		begin
-			decode_out <= data_in - cipher_shift;
-		end
-
-		// If we do need to loop around
-		if ((data_in - cipher_shift) <= 5'b11010)
-		begin
-			// Compute the offset by subtracting from the key how far we are away from the z character.
-			offset <= cipher_shift - (5'b11010 - data_in);
-
-			// Our encrypted character will be the character at position corresponding to the char 'a' - offset.
-			decode_out <= 5'b00000 - offset;
-		end
+		decode_out <= (data_in - cipher_shift) % 26;
 	end
 
 endmodule
